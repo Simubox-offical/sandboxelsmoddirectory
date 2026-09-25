@@ -1,18 +1,18 @@
 (function () {
-    function initGeminiAI() {
+    function startGeminiMod() {
         if (document.getElementById("gemini-ai-container")) return;
 
-        // --- Configuration & State ---
+        // --- Config & Storage ---
         let chatHistory = [];
         const STORAGE_KEY = "SANDBOXELS_GEMINI_API_KEY";
+        const MODEL_NAME = "gemini-3.8-flash";
 
-        // --- In-Game Drawing & Action Helpers ---
+        // --- Sandbox Canvas Helpers ---
         function safeCreatePixel(elem, x, y) {
             x = Math.round(x);
             y = Math.round(y);
             const w = typeof width !== "undefined" ? width : 150;
             const h = typeof height !== "undefined" ? height : 100;
-
             if (x < 0 || x >= w || y < 0 || y >= h) return;
             if (typeof createPixel === "function") {
                 createPixel(elem, x, y);
@@ -85,16 +85,16 @@
                             break;
                     }
                 } catch (err) {
-                    console.error("[Gemini AI] Error performing action:", action, err);
+                    console.error("[Gemini AI] Action error:", action, err);
                 }
             });
         }
 
-        // --- Gemini API Communication ---
+        // --- Gemini Request ---
         async function sendToGemini(userText) {
             const apiKey = localStorage.getItem(STORAGE_KEY);
             if (!apiKey) {
-                appendMessage("system", "Please set your Gemini API Key in the settings (⚙) first.");
+                appendMessage("system", "Please set your API key by clicking ⚙ first.");
                 return;
             }
 
@@ -102,14 +102,14 @@
             const currentH = typeof height !== "undefined" ? height : 80;
 
             const systemPrompt = `
-You are an AI player and companion inside the sandbox physics game "Sandboxels".
-The canvas dimensions are: width = ${currentW}, height = ${currentH} (origin (0,0) is top-left).
+You are an AI player inside the game "Sandboxels".
+Dimensions: width = ${currentW}, height = ${currentH} (top-left is 0,0).
 Common elements: "sand", "water", "fire", "stone", "dirt", "plant", "wood", "lava", "acid", "glass", "gunpowder", "iron", "ice", "steam", "smoke".
 
-Talk directly to the user and choose whether to perform actions on the board.
-Respond ONLY with a JSON object in this format:
+Talk directly to the user and choose whether to place elements or alter the world.
+You MUST output ONLY a JSON object:
 {
-  "reply": "Your message to the user",
+  "reply": "Your message to the player",
   "actions": [
     { "type": "pixel", "element": "sand", "x": 50, "y": 20 },
     { "type": "line", "element": "wood", "x1": 10, "y1": 50, "x2": 60, "y2": 50 },
@@ -119,7 +119,7 @@ Respond ONLY with a JSON object in this format:
     { "type": "clear" }
   ]
 }
-If no action is needed, return "actions": []. Do not include markdown codeblocks around the JSON.
+If no action is needed, return "actions": []. Do not include markdown formatting or backticks around the JSON.
 `;
 
             chatHistory.push({ role: "user", parts: [{ text: userText }] });
@@ -127,16 +127,15 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
             appendMessage("system", "Thinking...");
 
             try {
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+                // Using gemini-3.8-flash endpoint
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
                 const res = await fetch(endpoint, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         systemInstruction: { parts: [{ text: systemPrompt }] },
                         contents: chatHistory,
-                        generationConfig: {
-                            responseMimeType: "application/json"
-                        }
+                        generationConfig: { responseMimeType: "application/json" }
                     })
                 });
 
@@ -148,20 +147,20 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
                     return;
                 }
 
-                const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (!rawText) {
+                const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!raw) {
                     appendMessage("system", "No response received.");
                     return;
                 }
 
                 let parsed;
                 try {
-                    parsed = JSON.parse(rawText);
+                    parsed = JSON.parse(raw);
                 } catch {
-                    parsed = { reply: rawText, actions: [] };
+                    parsed = { reply: raw, actions: [] };
                 }
 
-                chatHistory.push({ role: "model", parts: [{ text: rawText }] });
+                chatHistory.push({ role: "model", parts: [{ text: raw }] });
                 appendMessage("ai", parsed.reply || "(Done)");
 
                 if (parsed.actions && parsed.actions.length > 0) {
@@ -174,33 +173,50 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
             }
         }
 
-        // --- Floating GUI ---
+        // --- Inject CSS ---
         const style = document.createElement("style");
         style.textContent = `
+            #gemini-toggle-btn {
+                position: fixed;
+                top: 10px;
+                right: 15px;
+                z-index: 2147483647;
+                background: #5865F2;
+                color: #fff;
+                border: 1px solid #ffffff44;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-family: sans-serif;
+                font-size: 12px;
+                font-weight: bold;
+                cursor: pointer;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            }
             #gemini-ai-container {
                 position: fixed;
-                bottom: 20px;
-                right: 20px;
-                width: 320px;
+                top: 50px;
+                right: 15px;
+                width: 330px;
                 height: 420px;
                 background: #18191c;
                 border: 2px solid #5865F2;
                 border-radius: 8px;
                 display: flex;
                 flex-direction: column;
-                z-index: 10000;
-                box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+                z-index: 2147483647;
+                box-shadow: 0 6px 20px rgba(0,0,0,0.6);
                 font-family: sans-serif;
                 font-size: 13px;
                 color: #fff;
             }
             #gemini-header {
                 background: #5865F2;
-                padding: 8px 12px;
+                padding: 8px 10px;
                 font-weight: bold;
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
+                cursor: move;
                 user-select: none;
             }
             #gemini-chat-log {
@@ -210,6 +226,7 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
+                background: #202225;
             }
             .gemini-msg {
                 padding: 6px 10px;
@@ -224,7 +241,7 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
                 padding: 8px;
                 display: flex;
                 gap: 6px;
-                background: #1e1f22;
+                background: #18191c;
             }
             #gemini-input {
                 flex: 1;
@@ -247,14 +264,21 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
         `;
         document.head.appendChild(style);
 
+        // --- Quick Open Toggle Button ---
+        const toggleBtn = document.createElement("button");
+        toggleBtn.id = "gemini-toggle-btn";
+        toggleBtn.textContent = "⚡ Gemini 3.8 Flash";
+        document.body.appendChild(toggleBtn);
+
+        // --- Main Chat Container ---
         const container = document.createElement("div");
         container.id = "gemini-ai-container";
         container.innerHTML = `
             <div id="gemini-header">
-                <span>Gemini AI Player</span>
+                <span>⚡ Gemini 3.8 Flash</span>
                 <div>
                     <button id="gemini-settings-btn" title="Set API Key">⚙</button>
-                    <button id="gemini-min-btn" style="background:none;border:none;color:#fff;cursor:pointer;">—</button>
+                    <button id="gemini-close-btn" style="background:none;border:none;color:#fff;cursor:pointer;font-size:14px;margin-left:4px;">✕</button>
                 </div>
             </div>
             <div id="gemini-chat-log"></div>
@@ -269,7 +293,8 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
         const input = document.getElementById("gemini-input");
         const sendBtn = document.getElementById("gemini-send");
         const settingsBtn = document.getElementById("gemini-settings-btn");
-        const minBtn = document.getElementById("gemini-min-btn");
+        const closeBtn = document.getElementById("gemini-close-btn");
+        const header = document.getElementById("gemini-header");
 
         function appendMessage(role, text) {
             const msg = document.createElement("div");
@@ -305,26 +330,48 @@ If no action is needed, return "actions": []. Do not include markdown codeblocks
             }
         });
 
-        let minimized = false;
-        minBtn.addEventListener("click", () => {
-            minimized = !minimized;
-            chatLog.style.display = minimized ? "none" : "flex";
-            document.getElementById("gemini-controls").style.display = minimized ? "none" : "flex";
-            container.style.height = minimized ? "auto" : "420px";
-            minBtn.textContent = minimized ? "+" : "—";
+        // --- Toggle / Close Visibility ---
+        closeBtn.addEventListener("click", () => {
+            container.style.display = "none";
         });
 
+        toggleBtn.addEventListener("click", () => {
+            container.style.display = (container.style.display === "none") ? "flex" : "none";
+        });
+
+        // --- Dragging Window ---
+        let isDragging = false, dragX = 0, dragY = 0;
+        header.addEventListener("mousedown", (e) => {
+            if (e.target.tagName === "BUTTON") return;
+            isDragging = true;
+            dragX = e.clientX - container.offsetLeft;
+            dragY = e.clientY - container.offsetTop;
+        });
+
+        document.addEventListener("mousemove", (e) => {
+            if (!isDragging) return;
+            container.style.left = (e.clientX - dragX) + "px";
+            container.style.top = (e.clientY - dragY) + "px";
+            container.style.right = "auto";
+        });
+
+        document.addEventListener("mouseup", () => { isDragging = false; });
+
+        // Initial Status
         if (!localStorage.getItem(STORAGE_KEY)) {
-            appendMessage("system", "Click the ⚙ icon to configure your Gemini API Key.");
+            appendMessage("system", "Click the ⚙ icon to enter your Gemini API Key.");
         } else {
-            appendMessage("system", "Gemini ready! Chat or give game orders.");
+            appendMessage("system", "Gemini 3.8 Flash ready! Chat or give a command.");
         }
     }
 
-    // Attach to Sandboxels' mod lifecycle
-    if (typeof runAfterLoad === "function") {
-        runAfterLoad(initGeminiAI);
+    if (document.body) {
+        startGeminiMod();
     } else {
-        window.addEventListener("load", initGeminiAI);
+        document.addEventListener("DOMContentLoaded", startGeminiMod);
+    }
+
+    if (typeof runAfterLoad === "function") {
+        runAfterLoad(startGeminiMod);
     }
 })();
